@@ -1,13 +1,13 @@
-import {
-  makeWASocket,
-  DisconnectReason,
-  useMultiFileAuthState,
-} from "@whiskeysockets/baileys";
-import cryptoCurrencyAPI from "./src/api/cryptoCurrency.js";
+import cron from "node-cron";
+import { makeWASocket, DisconnectReason, useMultiFileAuthState } from "@whiskeysockets/baileys";
+import WalletController from "./src/controller/WalletController.js";
 import toIDR from "./src/utils/toIDR.js";
 import toPercent from "./src/utils/toPercent.js";
 import dateTime from "./src/utils/datetime.js";
+import commaToDecimal from "./src/utils/commaToDecimal.js";
 import abbreviateNumber from "./src/utils/abbreviateNumber.js";
+import MessageBuilder from "./src/helpers/MessageBuilder.js";
+import cryptoCurrencyAPI from "./src/api/cryptoCurrency.js";
 
 const { state, saveCreds } = await useMultiFileAuthState("./src/auth");
 
@@ -19,16 +19,9 @@ const connectToWhatsApp = async () => {
 
   socket.ev.on("connection.update", (update) => {
     const { connection, lastDisconnect } = update;
-
     if (connection === "close") {
-      const shouldReconnect =
-        lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      console.log(
-        "Connection closed due to ",
-        lastDisconnect.error,
-        "reconnecting ",
-        shouldReconnect
-      );
+      const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      console.log("Connection closed due to ", lastDisconnect.error, "reconnecting ", shouldReconnect);
 
       // Reconnect if not logged out manually by user
       if (shouldReconnect) {
@@ -42,21 +35,96 @@ const connectToWhatsApp = async () => {
   socket.ev.on("creds.update", saveCreds);
 
   socket.ev.on("messages.upsert", async (m) => {
-    const message = m.messages[0].message;
-    const messageText =
-      message?.extendedTextMessage?.text ?? message?.conversation;
+    const { key, message } = m.messages[0];
+    const jid = key.remoteJid;
+    const sender = key.participant;
+    const messageText = message?.extendedTextMessage?.text ?? message?.conversation;
 
-    const messageAddress = m.messages[0].key.remoteJid;
-
-    console.log(m.messages[0].message);
+    // Revert if Message Body Not Found
     if (!messageText) {
       return;
     }
 
+    // .ping: Checks the bot's connection status.
     if (messageText === ".ping") {
-      await socket.sendMessage(messageAddress, {
+      await socket.sendMessage(jid, {
         text: `*Bot Aktif*`,
       });
+    }
+
+    // .wallet: Get sender's wallet items and calculate the investment return.
+    if (messageText === ".wallet") {
+      const senderWallet = new WalletController(sender);
+      await senderWallet.initializeWallet();
+
+      if (senderWallet?.items?.length > 0) {
+        const messageBuilder = new MessageBuilder();
+        const { investedCapital, portfolio, portfolioValue, percentChange } = await senderWallet.getPortfolio();
+        const percentIndicator = percentChange === 0 ? "" : percentChange > 0 ? "📈" : "📉";
+
+        messageBuilder.append("*Portfolio Anda*", 2);
+        portfolio.forEach((item) => {
+          const { symbol, itemCount, pricePerItem, currentValue } = item;
+
+          const percentChange = ((currentValue - pricePerItem) / pricePerItem) * 100;
+          const percentIndicator = percentChange === 0 ? "" : percentChange > 0 ? "📈" : "📉";
+
+          messageBuilder.append(
+            `${itemCount} ${symbol} - *${toIDR(itemCount * currentValue)}* (${percentIndicator}${toPercent(
+              percentChange
+            )})`
+          );
+        });
+        messageBuilder.newLine();
+        messageBuilder.append(
+          `Nilai Investasi : *${toIDR(portfolioValue)}* (${percentIndicator}${toPercent(percentChange)})`
+        );
+        messageBuilder.append(`Perubahan : *${toIDR(portfolioValue - investedCapital)}*`);
+        messageBuilder.append(`Modal Investasi : *${toIDR(investedCapital)}*`, 0);
+        await socket.sendMessage(jid, { text: messageBuilder.text }, { quoted: m.messages[0] });
+      } else {
+        await socket.sendMessage(jid, { text: "Wallet anda kosong" }, { quoted: m.messages[0] });
+      }
+    }
+
+    if (messageText.startsWith(".add ")) {
+      const senderWallet = new WalletController(sender);
+      await senderWallet.initializeWallet();
+
+      const [, symbol, amount] = messageText.split(" ");
+
+      if (!symbol || !amount || !amount.includes("@")) {
+        return await socket.sendMessage(
+          jid,
+          { text: "Parameter yang diberikan tidak valid" },
+          { quoted: m.messages[0] }
+        );
+      }
+      const itemCount = commaToDecimal(amount.split("@")[0]);
+      const pricePerItem = commaToDecimal(amount.split("@")[1]);
+
+      await senderWallet.add(symbol, itemCount, pricePerItem);
+
+      const messageBuilder = new MessageBuilder();
+      messageBuilder.append(
+        `*${itemCount} ${symbol.toUpperCase()}* senilai *${toIDR(itemCount * pricePerItem)}* ditambahkan ke wallet`
+      );
+
+      await socket.sendMessage(jid, { text: messageBuilder.text }, { quoted: m.messages[0] });
+    }
+
+    if (messageText.startsWith(".remove ")) {
+      const symbol = messageText.split(" ")[1].toUpperCase();
+
+      const senderWallet = new WalletController(sender);
+      await senderWallet.initializeWallet();
+
+      senderWallet.remove(symbol);
+
+      const messageBuilder = new MessageBuilder();
+      messageBuilder.append(`*${symbol.toUpperCase()}* dihapus dari wallet`);
+
+      await socket.sendMessage(jid, { text: messageBuilder.text }, { quoted: m.messages[0] });
     }
 
     if (messageText.startsWith(".price ")) {
@@ -69,21 +137,17 @@ const connectToWhatsApp = async () => {
         const percentChange = item.quote.IDR.percent_change_24h;
         const percentIndicator = percentChange < 0 ? "📉" : "📈";
 
-        await socket.sendMessage(messageAddress, {
-          text: `*${item.name} (${
-            item.symbol
-          })*\n${percentIndicator} ${toPercent(
+        await socket.sendMessage(jid, {
+          text: `*${item.name} (${item.symbol})*\n${percentIndicator} ${toPercent(
             percentChange
-          )} (24 Jam)\n\n💰 Harga : *${toIDR(
-            item.quote.IDR.price
-          )}*\n📊 Volume (24 Jam) : *${abbreviateNumber(
+          )} (24 Jam)\n\n💰 Harga : *${toIDR(item.quote.IDR.price)}*\n📊 Volume (24 Jam) : *${abbreviateNumber(
             item.quote.IDR.volume_24h
-          )}*\n📑 Marketcap : *${abbreviateNumber(
-            item.quote.IDR.market_cap
-          )}*\n\n_${dateTime(item.quote.IDR.last_updated)}_`,
+          )}*\n📑 Marketcap : *${abbreviateNumber(item.quote.IDR.market_cap)}*\n\n_${dateTime(
+            item.quote.IDR.last_updated
+          )}_`,
         });
       } else {
-        await socket.sendMessage(messageAddress, {
+        await socket.sendMessage(jid, {
           text: `Tidak ada barang yang bernama ${symbol}`,
         });
       }
