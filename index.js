@@ -44,7 +44,7 @@ const connectToWhatsApp = async () => {
           await userWallet.initializeWallet();
 
           if (userWallet.items?.length <= 0) {
-            return;
+            continue;
           }
 
           const { investedCapital, portfolio, portfolioValue, percentChange } = await userWallet.getPortfolio();
