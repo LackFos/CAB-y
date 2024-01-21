@@ -1,4 +1,6 @@
 import cron from "node-cron";
+import dotenv from "dotenv";
+import { promises as fsPromises } from "fs";
 import { makeWASocket, DisconnectReason, useMultiFileAuthState } from "@whiskeysockets/baileys";
 import WalletController from "./src/controller/WalletController.js";
 import toIDR from "./src/utils/toIDR.js";
@@ -8,6 +10,7 @@ import commaToDecimal from "./src/utils/commaToDecimal.js";
 import abbreviateNumber from "./src/utils/abbreviateNumber.js";
 import MessageBuilder from "./src/helpers/MessageBuilder.js";
 import cryptoCurrencyAPI from "./src/api/cryptoCurrency.js";
+dotenv.config();
 
 const { state, saveCreds } = await useMultiFileAuthState("./src/auth");
 
@@ -26,20 +29,62 @@ const connectToWhatsApp = async () => {
       // Reconnect if not logged out manually by user
       if (shouldReconnect) {
         connectToWhatsApp();
-      } else if (connection === "open") {
-        console.log("opened connection");
       }
+    } else if (connection === "open") {
+      console.log("opened connection");
+
+      cron.schedule("0 * * * *", async () => {
+        const filePath = "./src/database/wallet.json";
+        const fileData = await fsPromises.readFile(filePath);
+        const data = JSON.parse(fileData);
+
+        for (let user in data) {
+          const userPhoneNumber = user.split("@")[0];
+          const userWallet = new WalletController(user);
+          await userWallet.initializeWallet();
+
+          if (userWallet.items?.length <= 0) {
+            return;
+          }
+
+          const { investedCapital, portfolio, portfolioValue, percentChange } = await userWallet.getPortfolio();
+          const percentIndicator = percentChange === 0 ? "" : percentChange > 0 ? "📈" : "📉";
+
+          const messageBuilder = new MessageBuilder();
+          messageBuilder.append(`*Portfolio @${userPhoneNumber}*`, 2);
+
+          portfolio.forEach((item) => {
+            const { symbol, itemCount, pricePerItem, currentValue } = item;
+
+            const percentChange = ((currentValue - pricePerItem) / pricePerItem) * 100;
+            const percentIndicator = percentChange === 0 ? "" : percentChange > 0 ? "📈" : "📉";
+            messageBuilder.append(
+              `${itemCount.toLocaleString("id-ID")} ${symbol} - *${toIDR(
+                itemCount * currentValue
+              )}* (${percentIndicator}${toPercent(percentChange)})`
+            );
+          });
+          messageBuilder.newLine();
+          messageBuilder.append(
+            `Nilai Investasi : *${toIDR(portfolioValue)}* (${percentIndicator}${toPercent(percentChange)})`
+          );
+          messageBuilder.append(`Perubahan : *${toIDR(portfolioValue - investedCapital)}*`);
+          messageBuilder.append(`Modal Investasi : *${toIDR(investedCapital)}*`, 0);
+
+          await socket.sendMessage(process.env.GROUP_ID, { text: messageBuilder.text, mentions: [user] });
+        }
+      });
     }
   });
 
   socket.ev.on("creds.update", saveCreds);
 
   socket.ev.on("messages.upsert", async (m) => {
+    console.log(JSON.stringify(m, undefined, 2));
     const { key, message } = m.messages[0];
     const jid = key.remoteJid;
     const sender = key.participant;
     const messageText = message?.extendedTextMessage?.text ?? message?.conversation;
-
     // Revert if Message Body Not Found
     if (!messageText) {
       return;
@@ -49,6 +94,15 @@ const connectToWhatsApp = async () => {
     if (messageText === ".ping") {
       await socket.sendMessage(jid, {
         text: `*Bot Aktif*`,
+      });
+    }
+
+    if (messageText === ".all") {
+      const groupMeta = await socket.groupMetadata(process.env.GROUP_ID);
+      const participantsId = groupMeta.participants.map((participant) => participant.id);
+      await socket.sendMessage(jid, {
+        text: `*Perhatian*`,
+        mentions: participantsId,
       });
     }
 
@@ -70,9 +124,9 @@ const connectToWhatsApp = async () => {
           const percentIndicator = percentChange === 0 ? "" : percentChange > 0 ? "📈" : "📉";
 
           messageBuilder.append(
-            `${itemCount} ${symbol} - *${toIDR(itemCount * currentValue)}* (${percentIndicator}${toPercent(
-              percentChange
-            )})`
+            `${itemCount.toLocaleString("id-ID")} ${symbol} - *${toIDR(
+              itemCount * currentValue
+            )}* (${percentIndicator}${toPercent(percentChange)})`
           );
         });
         messageBuilder.newLine();
@@ -107,7 +161,9 @@ const connectToWhatsApp = async () => {
 
       const messageBuilder = new MessageBuilder();
       messageBuilder.append(
-        `*${itemCount} ${symbol.toUpperCase()}* senilai *${toIDR(itemCount * pricePerItem)}* ditambahkan ke wallet`
+        `*${itemCount.toLocaleString("id-ID")} ${symbol.toUpperCase()}* senilai *${toIDR(
+          itemCount * pricePerItem
+        )}* ditambahkan ke wallet`
       );
 
       await socket.sendMessage(jid, { text: messageBuilder.text }, { quoted: m.messages[0] });

@@ -23,9 +23,7 @@ const walletSlice = createSlice({
 
     removeFromWallet: (state, action) => {
       const symbol = action.payload;
-      const updatedWalletItems = state.items.filter((item) => {
-        item.symbol !== symbol;
-      });
+      const updatedWalletItems = state.items.filter((item) => item.symbol !== symbol);
       return { items: updatedWalletItems };
     },
   },
