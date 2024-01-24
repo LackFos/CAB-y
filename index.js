@@ -33,10 +33,15 @@ const connectToWhatsApp = async () => {
     } else if (connection === "open") {
       console.log("opened connection");
 
-      cron.schedule("0 * * * *", async () => {
+      cron.schedule("0 */2 * * *", async () => {
         const filePath = "./src/database/wallet.json";
         const fileData = await fsPromises.readFile(filePath);
+        const currenDate = new Date();
         const data = JSON.parse(fileData);
+
+        await socket.sendMessage(process.env.GROUP_ID, {
+          text: dateTime(currenDate.toLocaleString("en-US", { timeZone: "Asia/Jakarta" })),
+        });
 
         for (let user in data) {
           const userPhoneNumber = user.split("@")[0];
@@ -80,7 +85,6 @@ const connectToWhatsApp = async () => {
   socket.ev.on("creds.update", saveCreds);
 
   socket.ev.on("messages.upsert", async (m) => {
-    console.log(JSON.stringify(m, undefined, 2));
     const { key, message } = m.messages[0];
     const jid = key.remoteJid;
     const sender = key.participant;
