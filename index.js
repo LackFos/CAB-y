@@ -39,7 +39,7 @@ const connectToWhatsApp = async () => {
         const currenDate = new Date();
         const data = JSON.parse(fileData);
 
-        await socket.sendMessage(process.env.GROUP_ID, {
+        await socket.sendMessage(process.env.PORTO_GROUP_ID, {
           text: dateTime(currenDate.toLocaleString("en-US", { timeZone: "Asia/Jakarta" })),
         });
 
@@ -73,10 +73,11 @@ const connectToWhatsApp = async () => {
           messageBuilder.append(
             `Nilai Investasi : *${toIDR(portfolioValue)}* (${percentIndicator}${toPercent(percentChange)})`
           );
+
           messageBuilder.append(`Perubahan : *${toIDR(portfolioValue - investedCapital)}*`);
           messageBuilder.append(`Modal Investasi : *${toIDR(investedCapital)}*`, 0);
 
-          await socket.sendMessage(process.env.GROUP_ID, { text: messageBuilder.text, mentions: [user] });
+          await socket.sendMessage(process.env.PORTO_GROUP_ID, { text: messageBuilder.text, mentions: [user] });
         }
       });
     }
@@ -89,8 +90,9 @@ const connectToWhatsApp = async () => {
     const jid = key.remoteJid;
     const sender = key.participant;
     const messageText = message?.extendedTextMessage?.text ?? message?.conversation;
-    // Revert if Message Body Not Found
-    if (!messageText) {
+    // console.log(JSON.stringify(m.messages[0], undefined, 2));
+    // Revert if Message Body / Group not registered Not Found
+    if (!messageText || jid !== process.env.GROUP_ID) {
       return;
     }
 
@@ -102,8 +104,8 @@ const connectToWhatsApp = async () => {
     }
 
     if (messageText === ".all") {
-      const groupMeta = await socket.groupMetadata(process.env.GROUP_ID);
       const participantsId = groupMeta.participants.map((participant) => participant.id);
+
       await socket.sendMessage(jid, {
         text: `*Perhatian*`,
         mentions: participantsId,
@@ -160,7 +162,6 @@ const connectToWhatsApp = async () => {
       }
       const itemCount = commaToDecimal(amount.split("@")[0]);
       const pricePerItem = commaToDecimal(amount.split("@")[1]);
-
       await senderWallet.add(symbol, itemCount, pricePerItem);
 
       const messageBuilder = new MessageBuilder();
@@ -185,6 +186,21 @@ const connectToWhatsApp = async () => {
       messageBuilder.append(`*${symbol.toUpperCase()}* dihapus dari wallet`);
 
       await socket.sendMessage(jid, { text: messageBuilder.text }, { quoted: m.messages[0] });
+    }
+
+    if (messageText.startsWith(".usdt ")) {
+      const result = await cryptoCurrencyAPI.find("usdt");
+      const total = messageText.split(" ")[1];
+      const pricePerItem = result.data["USDT"][0].quote.IDR.price;
+      const totalAmount = total * pricePerItem;
+
+      await socket.sendMessage(
+        jid,
+        {
+          text: `${toIDR(totalAmount)}`,
+        },
+        { quoted: m.messages[0] }
+      );
     }
 
     if (messageText.startsWith(".price ")) {
