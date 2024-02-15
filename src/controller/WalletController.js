@@ -1,96 +1,68 @@
 import { promises as fsPromises } from "fs";
-import store from "../store/index.js";
-import { createNewWallet, addToWallet, removeFromWallet } from "../store/walletSlice.js";
-import cryptoCurrencyAPI from "../api/cryptoCurrency.js";
+import cryptoCurrencyAPI from "../services/cryptoCurrency.js";
 
 class WalletController {
-  constructor(sender) {
-    this.sender = sender;
+  constructor(user) {
+    this.user = user;
+    this.db = null;
+    this.items = null;
+    this.filePath = "./src/wallet.json";
   }
 
   async initializeWallet() {
     try {
-      const filePath = "./src/database/wallet.json";
-      const fileData = await fsPromises.readFile(filePath);
-      const data = JSON.parse(fileData);
-      const userWallet = data[this.sender] || { items: [] };
-      store.dispatch(createNewWallet(userWallet));
+      const fileData = await fsPromises.readFile(this.filePath);
+      this.db = JSON.parse(fileData);
+      this.items = this.db[this.user] || { items: [] };
     } catch (error) {
-      console.error("Failed to initialize wallet:", error);
+      console.error(error);
     }
   }
 
   async add(symbol, itemCount, pricePerItem) {
     try {
-      store.dispatch(
-        addToWallet({
-          symbol: symbol.toUpperCase(),
-          itemCount,
-          pricePerItem,
-        })
-      );
-      this.store();
+      const itemIndex = this.items.findIndex((item) => item.symbol === symbol);
+      const data = this.db;
+
+      if (itemIndex !== -1) {
+        data[this.user][itemIndex] = { symbol, itemCount, pricePerItem };
+      } else {
+        data[this.user].push({ symbol, itemCount, pricePerItem });
+      }
+
+      return await fsPromises.writeFile(this.filePath, JSON.stringify(data, null, 2));
     } catch (error) {
       console.error("Failed to add to wallet:", error);
     }
   }
 
   async remove(symbol) {
-    try {
-      store.dispatch(removeFromWallet(symbol));
-      this.store();
-    } catch (error) {
-      console.error("Failed to remove from wallet:", error);
-    }
+    const data = this.db;
+    data[this.user] = this.items.filter((item) => item.symbol !== symbol);
+    return await fsPromises.writeFile(this.filePath, JSON.stringify(this.db, null, 2));
   }
 
-  async store() {
-    try {
-      const senderWallet = store.getState().wallet;
-      const filePath = "./src/database/wallet.json";
-      const fileData = await fsPromises.readFile(filePath);
-      const data = JSON.parse(fileData);
-      data[this.sender] = senderWallet;
-      await fsPromises.writeFile(filePath, JSON.stringify(data, null, 2));
-    } catch (error) {
-      console.error("Failed to store wallet data:", error);
-    }
-  }
-
-  get items() {
-    const senderWallet = store.getState().wallet;
-    return senderWallet?.items || [];
-  }
-
-  async getPortfolio() {
-    try {
-      const senderWallet = store.getState().wallet;
-      const walletItems = senderWallet?.items || [];
-
-      const investedCapital = walletItems.reduce((total, item) => {
-        return total + item.itemCount * item.pricePerItem;
-      }, 0);
-
-      const getPortfolioData = walletItems.map(async (item) => {
-        const currentValue = await cryptoCurrencyAPI.getCurrentPrice(item.symbol);
+  async investmentSummary() {
+    const assets = await Promise.all(
+      this.items.map(async (item) => {
+        const currentPrice = await cryptoCurrencyAPI.getCurrentPrice(item.symbol);
+        const percentChange = ((currentPrice - item.pricePerItem) / item.pricePerItem) * 100;
+        const percentIndicator = percentChange === 0 ? "" : percentChange > 0 ? "📈" : "📉";
         return {
           ...item,
-          currentValue,
+          currentPrice,
+          percentChange,
+          percentIndicator,
         };
-      });
+      })
+    );
 
-      const portfolio = await Promise.all(getPortfolioData);
-      const portfolioValue = portfolio.reduce((total, item) => {
-        return total + item.itemCount * item.currentValue;
-      }, 0);
+    const investedCapital = this.items.reduce((total, item) => total + item.itemCount * item.pricePerItem, 0);
+    const investmentReturn = assets.reduce((total, crypto) => total + crypto.itemCount * crypto.currentPrice, 0);
+    const percentChange = ((investmentReturn - investedCapital) / investedCapital) * 100;
+    const percentIndicator = percentChange === 0 ? "" : percentChange > 0 ? "📈" : "📉";
 
-      const percentChange = ((portfolioValue - investedCapital) / investedCapital) * 100;
-
-      return { investedCapital, portfolio, portfolioValue, percentChange };
-    } catch (error) {
-      console.error("Failed to calculate portfolio:", error);
-      return { investedCapital: 0, portfolio: [], portfolioValue: 0, percentChange: 0 };
-    }
+    return { investedCapital, assets, investmentReturn, percentChange, percentIndicator };
   }
 }
 
