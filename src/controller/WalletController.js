@@ -3,17 +3,23 @@ import cryptoCurrencyAPI from "../services/cryptoCurrency.js";
 
 class WalletController {
   constructor(user) {
-    this.user = user;
-    this.db = null;
-    this.items = null;
     this.filePath = "./src/wallet.json";
+    this._db = null;
+    this.user = user;
+    this.items = null;
   }
 
   async initializeWallet() {
     try {
       const fileData = await fsPromises.readFile(this.filePath);
-      this.db = JSON.parse(fileData);
-      this.items = this.db[this.user] || { items: [] };
+      this._db = JSON.parse(fileData);
+
+      if (!this._db[this.user]) {
+        this._db[this.user] = { items: [] };
+        await fsPromises.writeFile(this.filePath, JSON.stringify(this._db, null, 2));
+      }
+
+      this.items = this._db[this.user].items;
     } catch (error) {
       console.error(error);
     }
@@ -22,24 +28,22 @@ class WalletController {
   async add(symbol, itemCount, pricePerItem) {
     try {
       const itemIndex = this.items.findIndex((item) => item.symbol === symbol);
-      const data = this.db;
 
       if (itemIndex !== -1) {
-        data[this.user][itemIndex] = { symbol, itemCount, pricePerItem };
+        this._db[this.user].items[itemIndex] = { symbol, itemCount, pricePerItem };
       } else {
-        data[this.user].push({ symbol, itemCount, pricePerItem });
+        this._db[this.user].items.push({ symbol, itemCount, pricePerItem });
       }
-
-      return await fsPromises.writeFile(this.filePath, JSON.stringify(data, null, 2));
+      return await fsPromises.writeFile(this.filePath, JSON.stringify(this._db, null, 2));
     } catch (error) {
       console.error("Failed to add to wallet:", error);
     }
   }
 
   async remove(symbol) {
-    const data = this.db;
-    data[this.user] = this.items.filter((item) => item.symbol !== symbol);
-    return await fsPromises.writeFile(this.filePath, JSON.stringify(this.db, null, 2));
+    this.items = this.items.filter((item) => item.symbol !== symbol);
+    this._db[this.user] = { items: this.items };
+    return await fsPromises.writeFile(this.filePath, JSON.stringify(this._db, null, 2));
   }
 
   async investmentSummary() {

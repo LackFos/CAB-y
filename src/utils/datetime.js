@@ -1,5 +1,4 @@
 const dateTime = (datetimeStr) => {
-  console.log(datetimeStr);
   const date = new Date(datetimeStr);
   const localDate = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Jakarta" }));
 
