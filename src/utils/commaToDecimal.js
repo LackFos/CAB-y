@@ -1,3 +1,3 @@
-const commaToDecimal = (value) => parseFloat(value.toString().replace(",", "."));
+const commaToDecimal = (value) => parseFloat(value.toString().replaceAll(".", "").replaceAll(",", "."));
 
 export default commaToDecimal;
