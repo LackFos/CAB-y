@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import { makeWASocket, DisconnectReason, useMultiFileAuthState } from "@whiskeysockets/baileys";
-import initializeCommands from "./src/commands.js";
 import initializeCrons from "./src/cron.js";
+import initializeCommands from "./src/commands.js";
 
 dotenv.config();
 
@@ -25,7 +25,7 @@ const connectToWhatsApp = async () => {
       }
     } else if (connection === "open") {
       console.log("opened connection");
-      initializeCrons();
+      initializeCrons(socket);
     }
   });
 

@@ -1,3 +1,4 @@
+import { evaluate } from "mathjs";
 import toIDR from "./utils/toIDR.js";
 import dateTime from "./utils/datetime.js";
 import toPercent from "./utils/toPercent.js";
@@ -6,7 +7,6 @@ import MessageBuilder from "./utils/MessageBuilder.js";
 import abbreviateNumber from "./utils/abbreviateNumber.js";
 import WalletController from "./controller/WalletController.js";
 import cryptoCurrencyAPI from "./services/cryptoCurrency.js";
-import { evaluate, re } from "mathjs";
 
 async function initializeCommands(socket, m) {
   const messageText = m.messages[0].message?.extendedTextMessage?.text ?? m.messages[0].message?.conversation;
@@ -41,11 +41,15 @@ async function initializeCommands(socket, m) {
    * Example: .usdt 1
    */
   if (messageText.startsWith(".usdt ")) {
+    const validPattern = /\.usdt\s+\d+([\,\.]\d+)?/g;
+    const matches = messageText.match(validPattern);
+
+    if (!matches || matches[0] !== messageText || matches.length !== 1) {
+      await socket.sendMessage(remoteJid, { text: "Mohon untuk memasukan angka" }, { quoted: m.messages[0] });
+      return;
+    }
+
     const USDTAmount = messageText.split(/\s+/g)[1];
-
-    if (isNaN(USDTAmount))
-      return await socket.sendMessage(remoteJid, { text: "Mohon untuk memasukan angka" }, { quoted: m.messages[0] });
-
     const USDT = await cryptoCurrencyAPI.find("usdt");
     const USDTPrice = USDT.data["USDT"][0].quote.IDR.price;
     const totalPrice = USDTAmount * USDTPrice;
@@ -59,25 +63,30 @@ async function initializeCommands(socket, m) {
    */
   if (messageText.startsWith(".price ")) {
     const symbol = messageText.split(/\s+/g)[1].toUpperCase();
-    const cryptoCurrency = await cryptoCurrencyAPI.find(symbol);
+    try {
+      const fetch = await cryptoCurrencyAPI.find(symbol);
+      const crypto = fetch.data[symbol][0];
 
-    if (cryptoCurrency) {
-      const crypto = cryptoCurrency.data[symbol][0];
-      const percentChange24H = crypto.quote.IDR.percent_change_24h;
-      const percentIndicator = percentChange24H < 0 ? "📉" : "📈";
+      if (crypto?.id) {
+        const percentChange24H = crypto.quote.IDR.percent_change_24h;
+        const percentIndicator = percentChange24H < 0 ? "📉" : "📈";
 
-      const messageBuilder = new MessageBuilder();
-      messageBuilder.append(`*${crypto.name} (${symbol})*`);
-      messageBuilder.append(`${percentIndicator} ${toPercent(percentChange24H)} (24 Jam)`);
-      messageBuilder.newLine();
-      messageBuilder.append(`💰 Harga : *${toIDR(crypto.quote.IDR.price)}*`);
-      messageBuilder.append(`📊 Volume (24 Jam) : *${abbreviateNumber(crypto.quote.IDR.volume_24h)}*`);
-      messageBuilder.append(`📑 Marketcap : *${abbreviateNumber(crypto.quote.IDR.market_cap)}*`);
-      messageBuilder.newLine();
-      messageBuilder.append(`_${dateTime(crypto.quote.IDR.last_updated)}_`, 0);
-      return await socket.sendMessage(remoteJid, { text: messageBuilder.text });
-    } else {
-      return await socket.sendMessage(remoteJid, { text: `Tidak ada barang yang bernama ${symbol}` });
+        const messageBuilder = new MessageBuilder();
+        messageBuilder.append(`*${crypto.name} (${symbol})*`);
+        messageBuilder.append(`${percentIndicator} ${toPercent(percentChange24H)} (24 Jam)`);
+        messageBuilder.newLine();
+        messageBuilder.append(`💰 Harga : *${toIDR(crypto.quote.IDR.price)}*`);
+        messageBuilder.append(`📊 Volume (24 Jam) : *${abbreviateNumber(crypto.quote.IDR.volume_24h)}*`);
+        messageBuilder.append(`📑 Marketcap : *${abbreviateNumber(crypto.quote.IDR.market_cap)}*`);
+        messageBuilder.newLine();
+        messageBuilder.append(`_${dateTime(crypto.quote.IDR.last_updated)}_`, 0);
+        return await socket.sendMessage(remoteJid, { text: messageBuilder.text });
+      }
+      return await socket.sendMessage(remoteJid, { text: `Tidak ada crypto yang bernama *${symbol}*` });
+    } catch (error) {
+      return await socket.sendMessage(remoteJid, {
+        text: `Error silahkan coba lagi: ${error.message}`,
+      });
     }
   }
 
@@ -114,9 +123,11 @@ async function initializeCommands(socket, m) {
         return await socket.sendMessage(remoteJid, { text: "Wallet anda kosong" }, { quoted: m.messages[0] });
       }
     } catch (error) {
-      return await socket.sendMessage(remoteJid, {
-        text: `Error silahkan coba lagi ${JSON.stringify(error, null, 2)}`,
-      });
+      return await socket.sendMessage(
+        remoteJid,
+        { text: `Error silahkan coba lagi: ${error.message}` },
+        { quoted: m.messages[0] }
+      );
     }
   }
 
@@ -129,24 +140,43 @@ async function initializeCommands(socket, m) {
     const wallet = new WalletController(participant);
     await wallet.initializeWallet();
 
-    const [command, symbol, amount] = messageText.split(/\s+/g);
+    const [command, param1, param2] = messageText.split(/\s+/g);
+    const symbol = param1.toUpperCase();
 
-    if (!symbol || !amount || !amount.includes("@"))
+    if (!symbol || !param2 || !param2.includes("@"))
       return await socket.sendMessage(
         remoteJid,
         { text: "Parameter yang diberikan tidak valid" },
         { quoted: m.messages[0] }
       );
 
-    const [itemCount, pricePerItem] = amount.split("@").map((item) => commaToDecimal(item));
-    await wallet.add(symbol.toUpperCase(), itemCount, pricePerItem);
+    try {
+      const fetch = await cryptoCurrencyAPI.find(symbol);
+      const isCryptoExists = Boolean(fetch.data[symbol].length);
 
-    const messageBuilder = new MessageBuilder(
-      `*${itemCount.toLocaleString("id-ID")} ${symbol.toUpperCase()}* senilai *${toIDR(
-        itemCount * pricePerItem
-      )}* ditambahkan ke wallet`
-    );
-    await socket.sendMessage(remoteJid, { text: messageBuilder.text }, { quoted: m.messages[0] });
+      if (!isCryptoExists)
+        return await socket.sendMessage(
+          remoteJid,
+          { text: `Tidak ada crypto bernama *${symbol}*` },
+          { quoted: m.messages[0] }
+        );
+
+      const [itemCount, pricePerItem] = param2.split("@").map((item) => commaToDecimal(item));
+      await wallet.add(symbol, itemCount, pricePerItem);
+
+      const messageBuilder = new MessageBuilder(
+        `*${itemCount.toLocaleString("id-ID")} ${symbol}* senilai *${toIDR(
+          itemCount * pricePerItem
+        )}* ditambahkan ke wallet`
+      );
+      await socket.sendMessage(remoteJid, { text: messageBuilder.text }, { quoted: m.messages[0] });
+    } catch (error) {
+      await socket.sendMessage(
+        remoteJid,
+        { text: `Terjadi kesalahan, silahkan coba lagi : ${error.message}` },
+        { quoted: m.messages[0] }
+      );
+    }
   }
 
   /**
@@ -166,8 +196,8 @@ async function initializeCommands(socket, m) {
 
     const messageBuilder = new MessageBuilder();
     walletItemsCount !== wallet.items.length
-      ? messageBuilder.append(`*${symbol.toUpperCase()}* dihapus dari wallet`)
-      : messageBuilder.append(`Tidak ada *${symbol.toUpperCase()}* diwallet`);
+      ? messageBuilder.append(`*${symbol}* dihapus dari wallet`)
+      : messageBuilder.append(`Tidak ada *${symbol}* diwallet`);
 
     return await socket.sendMessage(remoteJid, { text: messageBuilder.text }, { quoted: m.messages[0] });
   }
@@ -178,6 +208,11 @@ async function initializeCommands(socket, m) {
     await socket.sendMessage(remoteJid, { text: `${toIDR(result)}` }, { quoted: m.messages[0] });
   }
 
+  /**
+   * Perform a calculation.
+   * Usage: .c <expression>
+   * Example: .c 2+2
+   */
   if (messageText.startsWith(".c ")) {
     const [command, parameters] = messageText.split(/.c./g);
     const normalizeParameters = parameters.replace(/,/g, ".");
