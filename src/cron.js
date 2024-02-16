@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { promises as fsPromises } from "fs";
-import toIDR from "./utils/toIDR.js";
+import { toIDR } from "./utils/currency.js";
 import dateTime from "./utils/datetime.js";
 import toPercent from "./utils/toPercent.js";
 import MessageBuilder from "./utils/MessageBuilder.js";

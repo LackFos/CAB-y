@@ -1,5 +1,5 @@
 import { evaluate } from "mathjs";
-import toIDR from "./utils/toIDR.js";
+import { toIDR, toUSD } from "./utils/currency.js";
 import dateTime from "./utils/datetime.js";
 import toPercent from "./utils/toPercent.js";
 import commaToDecimal from "./utils/commaToDecimal.js";
@@ -41,7 +41,7 @@ async function initializeCommands(socket, m) {
    * Example: .usdt 1
    */
   if (messageText.startsWith(".usdt ")) {
-    const validPattern = /\.usdt\s+\d+([\,\.]\d+)?/g;
+    const validPattern = /\.usdt\s+\d+(\.\d+)?/g;
     const matches = messageText.match(validPattern);
 
     if (!matches || matches[0] !== messageText || matches.length !== 1) {
@@ -202,12 +202,6 @@ async function initializeCommands(socket, m) {
     return await socket.sendMessage(remoteJid, { text: messageBuilder.text }, { quoted: m.messages[0] });
   }
 
-  if (quotedMessage && quotedMessage.startsWith("Rp")) {
-    const previousValue = quotedMessage.replace(/[Rp.]/g, "").trim().replace(/,/g, ".");
-    const result = evaluate(`${previousValue} ${messageText.replace(/,/g, ".")}`);
-    await socket.sendMessage(remoteJid, { text: `${toIDR(result)}` }, { quoted: m.messages[0] });
-  }
-
   /**
    * Perform a calculation.
    * Usage: .c <expression>
@@ -219,6 +213,32 @@ async function initializeCommands(socket, m) {
     const result = evaluate(normalizeParameters);
     await socket.sendMessage(remoteJid, { text: `${toIDR(result)}` }, { quoted: m.messages[0] });
   }
-}
 
+  if (quotedMessage && quotedMessage.startsWith("Rp")) {
+    const previousValue = quotedMessage.replace(/[Rp.]/g, "").trim().replace(/,/g, ".");
+    const result = evaluate(`${previousValue} ${messageText.replace(/,/g, ".")}`);
+    await socket.sendMessage(remoteJid, { text: `${toIDR(result)}` }, { quoted: m.messages[0] });
+  }
+
+  /**
+   * Convert a specified amount from IDR (Indonesian Rupiah) to USD (United States Dollar).
+   * Usage: .idr <amount>
+   * Example: .idr 15600
+   */
+  if (messageText.startsWith(".idr ")) {
+    const validPattern = /\.idr\s+\d+(\.\d+)?/g;
+    const matches = messageText.match(validPattern);
+
+    if (!matches || matches[0] !== messageText || matches.length !== 1) {
+      await socket.sendMessage(remoteJid, { text: "Mohon untuk memasukan angka" }, { quoted: m.messages[0] });
+      return;
+    }
+
+    const IDRAmount = messageText.split(/\s+/g)[1];
+    const USDT = await cryptoCurrencyAPI.find("usdt");
+    const USDTPrice = USDT.data["USDT"][0].quote.IDR.price;
+    const USDAmount = IDRAmount / USDTPrice;
+    return await socket.sendMessage(remoteJid, { text: `${toUSD(USDAmount)}` }, { quoted: m.messages[0] });
+  }
+}
 export default initializeCommands;
