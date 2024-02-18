@@ -252,8 +252,16 @@ async function initializeCommands(socket, m) {
   if (messageText.startsWith(".c ")) {
     const expression = messageText.replace(/.c\s+/g, "");
     const normalizeExpression = expression.replaceAll(".", "").replaceAll(",", ".");
-    const result = evaluate(normalizeExpression);
-    await socket.sendMessage(remoteJid, { text: `Rp ${result.toLocaleString("id-ID")}` }, { quoted: m.messages[0] });
+    try {
+      const result = evaluate(normalizeExpression);
+      await socket.sendMessage(remoteJid, { text: `Rp ${result.toLocaleString("id-ID")}` }, { quoted: m.messages[0] });
+    } catch (error) {
+      await socket.sendMessage(
+        remoteJid,
+        { text: `Parameter yang anda berikan tidak valid : ${error.message}` },
+        { quoted: m.messages[0] }
+      );
+    }
   }
 
   if (quotedMessage && quotedMessage.startsWith("Rp")) {
@@ -262,6 +270,13 @@ async function initializeCommands(socket, m) {
     const normalizeMessageText = messageText.replaceAll(".", "").replaceAll(",", ".");
     const result = evaluate(`${normalizePreviousValue} ${normalizeMessageText}`);
     await socket.sendMessage(remoteJid, { text: `Rp ${result.toLocaleString("id-ID")}` }, { quoted: m.messages[0] });
+  }
+
+  if (messageText.startsWith(".percent ")) {
+    const [command, parameters] = messageText.split(/\s+/g);
+    const [oldValue, newValue] = parameters.split("-");
+    const result = parseFloat(((newValue - oldValue) / oldValue) * 100);
+    await socket.sendMessage(remoteJid, { text: `${toPercent(result)}` }, { quoted: m.messages[0] });
   }
 }
 export default initializeCommands;
