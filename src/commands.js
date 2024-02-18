@@ -1,4 +1,4 @@
-import { evaluate, exp } from "mathjs";
+import { evaluate } from "mathjs";
 import { toIDR, toUSD } from "./utils/currency.js";
 import dateTime from "./utils/datetime.js";
 import toPercent from "./utils/toPercent.js";
@@ -18,11 +18,27 @@ async function initializeCommands(socket, m) {
   if (!messageText || remoteJid !== process.env.GROUP_ID) return;
   const groupMeta = await socket.groupMetadata(process.env.GROUP_ID);
 
-  /**
-   * Check the bot's connection status.
-   * Usage: .ping
-   */
+  if (messageText === ".help") {
+    const message = new MessageBuilder();
+    message.append("1. *_ping_*\n- ⚙️ Periksa status koneksi bot.", 2);
+    message.append("2. *_all_*\n- 📢 Mention semua peserta dalam obrolan grup.", 2);
+    message.append("3. *_usdt_*\n- 💱 Periksa harga USDT atau konversikan jumlah USDT ke IDR.", 2);
+    message.append("4. *_idr_*\n- 💵 Konversi jumlah IDR ke USD.", 2);
+    message.append("5. *_price_*\n- 💰 Periksa harga sebuah cryptocurrency dan tampilkan informasi tambahan.", 2);
+    message.append("6. *_wallet_*\n- 🧳 Dapatkan informasi dompet pengguna dan tampilkan ringkasan investasi.", 2);
+    message.append("7. *_add_*\n- ➕ Tambahkan item ke dompet pengguna.", 2);
+    message.append("8. *_remove_*\n- ➖ Hapus item dari dompet pengguna.", 2);
+    message.append("9. *_c_*\n- 🧮 Lakukan perhitungan.", 2);
+    message.append("10. *_percent_*\n- 📊 Hitung perubahan persentase antara dua nilai.");
+    await socket.sendMessage(remoteJid, { text: message.text });
+    return;
+  }
+
   if (messageText === ".ping") {
+    /**
+     * Check the bot's connection status.
+     * Usage: .ping
+     */
     await socket.sendMessage(remoteJid, { text: `*Bot Aktif*` });
     return;
   }
@@ -274,7 +290,7 @@ async function initializeCommands(socket, m) {
 
   if (messageText.startsWith(".percent ")) {
     const [command, parameters] = messageText.split(/\s+/g);
-    const [oldValue, newValue] = parameters.split("-");
+    const [oldValue, newValue] = parameters.split("-").map((parameter) => commaToDecimal(parameter));
     const result = parseFloat(((newValue - oldValue) / oldValue) * 100);
     await socket.sendMessage(remoteJid, { text: `${toPercent(result)}` }, { quoted: m.messages[0] });
   }
