@@ -139,11 +139,11 @@ async function initializeCommands(socket, m) {
   if (messageText === ".wallet") {
     try {
       const wallet = new WalletController(participant);
-      await wallet.initializeWallet(); // Get user wallet data
+      await wallet.initializeWallet();
 
       if (wallet.items?.length === 0) throw Error("Wallet anda kosong");
 
-      await socket.sendMessage(remoteJid, { text: "*Mengambil Data...*" }, { quoted: m.messages[0] });
+      const { key } = await socket.sendMessage(remoteJid, { text: "*Chotto Matte 👉👈*" }, { quoted: m.messages[0] });
 
       const { investedCapital, assets, investmentReturn, percentChange, percentIndicator } = await wallet.investmentSummary();
 
@@ -160,9 +160,10 @@ async function initializeCommands(socket, m) {
       messageBuilder.append(`Nilai Investasi : *${toIDR(investmentReturn)}* (${percentIndicator}${toPercent(percentChange)})`);
       messageBuilder.append(`Perubahan : *${toIDR(investmentReturn - investedCapital)}*`);
       messageBuilder.append(`Modal Investasi : *${toIDR(investedCapital)}*`, 0);
-      return await socket.sendMessage(remoteJid, { text: messageBuilder.text }, { quoted: m.messages[0] });
+      return await socket.sendMessage(remoteJid, { text: messageBuilder.text, edit: key });
     } catch (error) {
-      return await socket.sendMessage(remoteJid, { text: `Error : ${error.message}` }, { quoted: m.messages[0] });
+      console.log("OK");
+      return await socket.sendMessage(remoteJid, { text: `Error : ${error.message}`, quoted: m.messages[0] });
     }
   }
 
