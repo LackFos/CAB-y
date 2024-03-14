@@ -34,6 +34,14 @@ const cryptoCurrency = {
 
     return fetch.data.data[symbol][0].quote.IDR.price;
   },
+
+  getCreditInfo: async (symbol) => {
+    const fetch = await axios.get("https://pro-api.coinmarketcap.com/v1/key/info", {
+      headers: { "X-CMC_PRO_API_KEY": apiKey },
+      params: { symbol, convert: "IDR" },
+    });
+    return fetch.data;
+  },
 };
 
 export default cryptoCurrency;

@@ -8,6 +8,9 @@ import abbreviateNumber from "./utils/abbreviateNumber.js";
 import WalletController from "./controller/WalletController.js";
 import cryptoCurrencyAPI from "./services/cryptoCurrency.js";
 
+let mutedParticipants = [];
+let bannedParticipants = [];
+
 async function initializeCommands(socket, m) {
   const { remoteJid, participant } = m.messages[0].key;
   const groupMeta = await socket.groupMetadata(process.env.GROUP_ID);
@@ -15,8 +18,11 @@ async function initializeCommands(socket, m) {
   const quotedMessage =
     m.messages[0].message?.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text ??
     m.messages[0].message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation;
+  const quotedParticipant = m.messages[0].message?.extendedTextMessage?.contextInfo?.participant;
+  const mentions = m.messages[0].message?.extendedTextMessage?.contextInfo?.mentionedJid;
 
-  if (!messageText || remoteJid !== process.env.GROUP_ID) return; // If the GROUP_ID is not registered, stop the code
+  if (mutedParticipants.includes(participant)) await socket.sendMessage(remoteJid, { delete: m.messages[0].key });
+  if (!messageText || remoteJid !== process.env.GROUP_ID || mutedParticipants.includes(participant) || bannedParticipants.includes(participant)) return; // If the GROUP_ID is not registered, stop the code
 
   /**
    * Get all available commands.
@@ -34,6 +40,7 @@ async function initializeCommands(socket, m) {
     message.append("8. *_remove_*\n- ➖ Hapus item dari dompet pengguna.", 2);
     message.append("9. *_c_*\n- 🧮 Lakukan perhitungan.", 2);
     message.append("10. *_percent_*\n- 📊 Hitung perubahan persentase antara dua nilai.");
+    message.append("10. *_credit_*\n- 📊 Dapatkan informasi credit API tersisa.");
     return await socket.sendMessage(remoteJid, { text: message.text });
   }
 
@@ -162,7 +169,6 @@ async function initializeCommands(socket, m) {
       messageBuilder.append(`Modal Investasi : *${toIDR(investedCapital)}*`, 0);
       return await socket.sendMessage(remoteJid, { text: messageBuilder.text, edit: key });
     } catch (error) {
-      console.log("OK");
       return await socket.sendMessage(remoteJid, { text: `Error : ${error.message}`, quoted: m.messages[0] });
     }
   }
@@ -173,7 +179,7 @@ async function initializeCommands(socket, m) {
    * Example: ".add CABY 1@3500" adds 1 units of CABY at the price of 3500 each.
    */
   if (messageText.startsWith(".add ")) {
-    const validPattern = /.add\s+[\w\s\S]+\s\d+([.,]\d+)?@\d+([.,]\d+)?/g;
+    const validPattern = /.add\s+[\w\s\S]+\s\d+(\.\d{3})*(,\d+)?@\d+(\.\d{3})*(,\d+)?/g;
     const matches = messageText.match(validPattern);
 
     if (!matches || matches[0] !== messageText || matches.length !== 1)
@@ -239,9 +245,9 @@ async function initializeCommands(socket, m) {
     const normalizeExpression = expression.replaceAll(".", "").replaceAll(",", ".");
     try {
       const result = evaluate(normalizeExpression);
-      await socket.sendMessage(remoteJid, { text: `Rp ${result.toLocaleString("id-ID")}` }, { quoted: m.messages[0] });
+      return await socket.sendMessage(remoteJid, { text: `Rp ${result.toLocaleString("id-ID")}` }, { quoted: m.messages[0] });
     } catch (error) {
-      await socket.sendMessage(remoteJid, { text: `Parameter yang anda berikan tidak valid : ${error.message}` }, { quoted: m.messages[0] });
+      return await socket.sendMessage(remoteJid, { text: `Parameter yang anda berikan tidak valid : ${error.message}` }, { quoted: m.messages[0] });
     }
   }
 
@@ -249,15 +255,92 @@ async function initializeCommands(socket, m) {
     const previousValue = quotedMessage.replace(/[Rp.]/g, "");
     const normalizePreviousValue = previousValue.trim().replaceAll(".", "").replaceAll(",", ".");
     const normalizeMessageText = messageText.replaceAll(".", "").replaceAll(",", ".");
-    const result = evaluate(`${normalizePreviousValue} ${normalizeMessageText}`);
-    await socket.sendMessage(remoteJid, { text: `Rp ${result.toLocaleString("id-ID")}` }, { quoted: m.messages[0] });
+    try {
+      const result = evaluate(`${normalizePreviousValue} ${normalizeMessageText}`);
+      return await socket.sendMessage(remoteJid, { text: `Rp ${result.toLocaleString("id-ID")}` }, { quoted: m.messages[0] });
+    } catch (error) {
+      return await socket.sendMessage(remoteJid, { text: `Parameter yang anda berikan tidak valid : ${error.message}` }, { quoted: m.messages[0] });
+    }
   }
 
+  /**
+   * Calculate the difference between two numbers
+   * Usage: .percent <interger>-<interger>
+   * Example: .percent 5-10
+   */
   if (messageText.startsWith(".percent ")) {
     const [command, parameters] = messageText.split(/\s+/g);
     const [oldValue, newValue] = parameters.split("-").map((parameter) => commaToDecimal(parameter));
     const result = parseFloat(((newValue - oldValue) / oldValue) * 100);
-    await socket.sendMessage(remoteJid, { text: `${toPercent(result)}` }, { quoted: m.messages[0] });
+    return await socket.sendMessage(remoteJid, { text: `${toPercent(result)}` }, { quoted: m.messages[0] });
+  }
+
+  /**
+   * Get Coinmarketcap API Credit left
+   * Usage: .credit
+   */
+  if (messageText === ".credit") {
+    const fetch = await cryptoCurrencyAPI.getCreditInfo();
+    return await socket.sendMessage(remoteJid, { text: JSON.stringify(fetch.data.usage, undefined, 2) }, { quoted: m.messages[0] });
+  }
+
+  // Admin Command
+
+  /**
+   * Send current wallet data to Backup group chat
+   * Usage: .percent <interger>-<interger>
+   */
+  if (participant === process.env.ADMIN_ID) {
+    if (messageText === ".backup") {
+      try {
+        const wallet = new WalletController();
+
+        const currentDate = new Date();
+        await socket.sendMessage(process.env.CRON_BACKUP_GROUP_ID, { text: `Backup: ${dateTime(currentDate)}` });
+
+        await socket.sendMessage(process.env.CRON_BACKUP_GROUP_ID, { text: JSON.stringify(await wallet.rawData(), undefined, 2) });
+        return await socket.sendMessage(remoteJid, { text: "Data berhasil dibackup" }, { quoted: m.messages[0] });
+      } catch (error) {
+        return await socket.sendMessage(remoteJid, { text: `Error : ${error.message}` }, { quoted: m.messages[0] });
+      }
+    }
+
+    if (messageText.startsWith(".unmute ")) {
+      try {
+        mutedParticipants = mutedParticipants.filter((participant) => participant !== mentions[0]);
+        return await socket.sendMessage(remoteJid, { text: `*Mute dicopot*` }, { quoted: m.messages[0] });
+      } catch (error) {
+        return await socket.sendMessage(remoteJid, { text: `Error : ${error.message}` }, { quoted: m.messages[0] });
+      }
+    }
+
+    if (messageText === ".mute") {
+      try {
+        mutedParticipants.push(quotedParticipant);
+        return await socket.sendMessage(remoteJid, { text: `*Berhasil dimute*` }, { quoted: m.messages[0] });
+      } catch (error) {
+        return await socket.sendMessage(remoteJid, { text: `Error : ${error.message}` }, { quoted: m.messages[0] });
+      }
+    }
+
+    if (messageText.startsWith(".unban ")) {
+      try {
+        bannedParticipants = mutedParticipants.filter((participant) => participant !== mentions[0]);
+        return await socket.sendMessage(remoteJid, { text: `*Ban dicopot*` }, { quoted: m.messages[0] });
+      } catch (error) {
+        return await socket.sendMessage(remoteJid, { text: `Error : ${error.message}` }, { quoted: m.messages[0] });
+      }
+    }
+
+    if (messageText === ".ban") {
+      try {
+        bannedParticipants.push(quotedParticipant);
+        return await socket.sendMessage(remoteJid, { text: `*Berhasil diban*` }, { quoted: m.messages[0] });
+      } catch (error) {
+        return await socket.sendMessage(remoteJid, { text: `Error : ${error.message}` }, { quoted: m.messages[0] });
+      }
+    }
   }
 }
+
 export default initializeCommands;

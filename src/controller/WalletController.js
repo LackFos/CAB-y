@@ -2,7 +2,7 @@ import { promises as fsPromises } from "fs";
 import cryptoCurrencyAPI from "../services/cryptoCurrency.js";
 
 class WalletController {
-  constructor(user) {
+  constructor(user = null) {
     this.filePath = "./src/wallet.json";
     this._db = null;
     this.user = user;
@@ -67,6 +67,11 @@ class WalletController {
     const percentIndicator = percentChange === 0 ? "" : percentChange > 0 ? "📈" : "📉";
 
     return { investedCapital, assets, investmentReturn, percentChange, percentIndicator };
+  }
+
+  async rawData() {
+    const fileData = await fsPromises.readFile(this.filePath);
+    return JSON.parse(fileData);
   }
 }
 

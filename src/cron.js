@@ -6,9 +6,9 @@ import toPercent from "./utils/toPercent.js";
 import MessageBuilder from "./utils/MessageBuilder.js";
 import WalletController from "./controller/WalletController.js";
 
-function initializeCrons(socket) {
+async function initializeCrons(socket) {
   // Send participant investment summarize every 2 hours
-  if (process.env.PORTO_GROUP_ID) {
+  if (process.env.CRON_PORTO_GROUP_ID) {
     cron.schedule("0 */2 * * *", async () => {
       try {
         const filePath = "./src/wallet.json";
@@ -16,7 +16,7 @@ function initializeCrons(socket) {
         const users = JSON.parse(fileData);
 
         const currentDate = new Date();
-        await socket.sendMessage(process.env.PORTO_GROUP_ID, { text: dateTime(currentDate) });
+        await socket.sendMessage(process.env.CRON_PORTO_GROUP_ID, { text: dateTime(currentDate) });
 
         for (let user in users) {
           const userPhoneNumber = user.split("@")[0];
@@ -25,29 +25,37 @@ function initializeCrons(socket) {
 
           if (wallet.items?.length <= 0) continue;
 
-          const { investedCapital, assets, investmentReturn, percentChange, percentIndicator } =
-            await wallet.investmentSummary();
+          const { investedCapital, assets, investmentReturn, percentChange, percentIndicator } = await wallet.investmentSummary();
 
           const messageBuilder = new MessageBuilder();
           messageBuilder.append(`*Portfolio @${userPhoneNumber}*`, 2);
           messageBuilder.map(
             assets,
             (asset) =>
-              `${asset.itemCount.toLocaleString("id-ID")} ${asset.symbol} - *${toIDR(
-                asset.itemCount * asset.currentPrice
-              )}* (${asset.percentIndicator}${toPercent(asset.percentChange)})`
+              `${asset.itemCount.toLocaleString("id-ID")} ${asset.symbol} - *${toIDR(asset.itemCount * asset.currentPrice)}* (${
+                asset.percentIndicator
+              }${toPercent(asset.percentChange)})`
           );
           messageBuilder.newLine();
-          messageBuilder.append(
-            `Nilai Investasi : *${toIDR(investmentReturn)}* (${percentIndicator}${toPercent(percentChange)})`
-          );
+          messageBuilder.append(`Nilai Investasi : *${toIDR(investmentReturn)}* (${percentIndicator}${toPercent(percentChange)})`);
           messageBuilder.append(`Perubahan : *${toIDR(investmentReturn - investedCapital)}*`);
           messageBuilder.append(`Modal Investasi : *${toIDR(investedCapital)}*`, 0);
-          await socket.sendMessage(process.env.PORTO_GROUP_ID, { text: messageBuilder.text, mentions: [user] });
+          await socket.sendMessage(process.env.CRON_PORTO_GROUP_ID, { text: messageBuilder.text, mentions: [user] });
         }
       } catch (error) {
         console.error(error);
       }
+    });
+  }
+
+  if (process.env.CRON_BACKUP_GROUP_ID) {
+    cron.schedule("0 */3 * * *", async () => {
+      const wallet = new WalletController();
+
+      const currentDate = new Date();
+      await socket.sendMessage(process.env.CRON_BACKUP_GROUP_ID, { text: `Backup: ${dateTime(currentDate)}` });
+
+      return await socket.sendMessage(process.env.CRON_BACKUP_GROUP_ID, { text: JSON.stringify(await wallet.rawData(), undefined, 2) });
     });
   }
 }
