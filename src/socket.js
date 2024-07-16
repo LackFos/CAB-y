@@ -1,8 +1,4 @@
-import {
-  makeWASocket,
-  DisconnectReason,
-  useMultiFileAuthState,
-} from "@whiskeysockets/baileys";
+import { makeWASocket, DisconnectReason, useMultiFileAuthState } from "@whiskeysockets/baileys";
 import commandHandler from "./commands/index.js";
 
 const { state, saveCreds } = await useMultiFileAuthState("./src/auth");

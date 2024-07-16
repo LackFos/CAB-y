@@ -1,38 +1,52 @@
 import WalletModel from "../../models/WalletModel.js";
 
-export const addItemToWallet = async (user, newItem) => {
+export const addItemToWallet = async (userId, item) => {
   try {
-    const wallet = await WalletModel.findOne({ user });
+    const wallet = await WalletModel.findOne({ user: userId });
 
-    if (wallet) {
-      const updatedWalletItems = wallet.items.filter(
-        (item) => item.symbol !== newItem.symbol
-      );
-      updatedWalletItems.push(newItem);
-
-      wallet.items = updatedWalletItems;
-      await wallet.save();
-    } else {
-      await WalletModel.create({ user, items: [newItem] }); // Create new wallet
+    if (!wallet) {
+      await WalletModel.create({ user: userId, items: [item] });
+      return;
     }
+
+    const existingItemIndex = wallet.items.findIndex((walletItem) => walletItem.symbol === item.symbol);
+
+    if (existingItemIndex !== -1) {
+      const existingItem = wallet.items[existingItemIndex];
+      const updatedQuantity = existingItem.quantity + item.quantity;
+      const totalCost = existingItem.pricePerItem * existingItem.quantity + item.pricePerItem * item.quantity;
+      const updatedPricePerItem = totalCost / updatedQuantity;
+
+      wallet.items[existingItemIndex] = { ...existingItem, quantity: updatedQuantity, pricePerItem: updatedPricePerItem };
+    } else {
+      wallet.items.push(item);
+    }
+
+    await wallet.save();
   } catch (error) {
-    throw Error(error);
+    throw new Error(error);
   }
 };
 
-export const removeItemFromWallet = async (user, symbol) => {
+export const removeItemFromWallet = async (userId, symbol, quantity) => {
   try {
-    const wallet = await WalletModel.findOne({ user, "items.symbol": symbol });
+    const wallet = await WalletModel.findOne({ user: userId, "items.symbol": symbol });
 
-    if (!wallet) throw Error(`Tidak ada *${symbol}* dalam wallet`);
+    if (!wallet) {
+      throw new Error(`Item with symbol ${symbol} not found in the wallet`);
+    }
 
-    const updatedWalletItems = wallet.items.filter(
-      (item) => item.symbol !== symbol
-    );
+    const itemToRemove = wallet.items.find((item) => item.symbol === symbol);
+    const updatedItems = wallet.items.filter((item) => item.symbol !== symbol);
 
-    wallet.items = updatedWalletItems;
-    wallet.save();
+    if (quantity) {
+      itemToRemove.quantity -= quantity;
+      updatedItems.push(itemToRemove);
+    }
+
+    wallet.items = updatedItems;
+    await wallet.save();
   } catch (error) {
-    throw Error(error);
+    throw error;
   }
 };

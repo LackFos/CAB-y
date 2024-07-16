@@ -1,21 +1,10 @@
-import { evaluate } from "mathjs";
+import { evaluate, log } from "mathjs";
 import WhatsappMessage from "../utils/WhatsappMessage.js";
 import * as formatter from "../utils/formatter.js";
 import { regexValidator } from "../utils/regexValidator.js";
-import {
-  priceResponse,
-  addItemToWalletResponse,
-  walletSummaryResponse,
-} from "../utils/helpers/responseHelper.js";
-import {
-  addItemToWallet,
-  removeItemFromWallet,
-} from "../controllers/wallets/updateWallet.js";
-import {
-  getCrypto,
-  getUsdtPrice,
-  getCreditInfo,
-} from "../services/coinmarketcap/getCrypto.js";
+import { priceResponse, addItemToWalletResponse, walletSummaryResponse } from "../utils/helpers/responseHelper.js";
+import { addItemToWallet, removeItemFromWallet } from "../controllers/wallets/updateWallet.js";
+import { getCrypto, getUsdtPrice, getCreditInfo } from "../services/coinmarketcap/getCrypto.js";
 import { getWalletSummary } from "../controllers/wallets/getWallet.js";
 import { getGroup } from "../controllers/groups/getGroup.js";
 import { initializeAdminCommand } from "./admin.js";
@@ -49,9 +38,7 @@ async function commandHandler(socket, m) {
     if (message.text === ".all") {
       const groupMeta = await socket.groupMetadata(message.remoteJid);
 
-      const participantsId = groupMeta.participants.map(
-        (participant) => participant.id
-      );
+      const participantsId = groupMeta.participants.map((participant) => participant.id);
 
       return await socket.sendMessage(message.remoteJid, {
         text: "*Perhatian*",
@@ -89,11 +76,7 @@ async function commandHandler(socket, m) {
     if (message.text === ".wallet") {
       const wallet = await getWalletSummary(message.sender);
 
-      const { key } = await socket.sendMessage(
-        message.remoteJid,
-        { text: "*Chotto Matte 👉👈*" },
-        { quoted: message.ref }
-      );
+      const { key } = await socket.sendMessage(message.remoteJid, { text: "*Chotto Matte 👉👈*" }, { quoted: message.ref });
 
       const response = walletSummaryResponse(wallet);
 
@@ -109,16 +92,13 @@ async function commandHandler(socket, m) {
      * Example: ".add CABY 1@3500" adds 1 units of CABY at the price of 3500 each.
      */
     if (message.text.startsWith(".add ")) {
-      const commandRegex =
-        /.add\s+[\w\s\S]+\s\d+(\.\d{3})*(,\d+)?@\d+(\.\d{3})*(,\d+)?/g;
+      const commandRegex = /.add\s+[\w\s\S]+\s\d+(\.\d{3})*(,\d+)?@\d+(\.\d{3})*(,\d+)?/g;
 
       await regexValidator(message.text, commandRegex);
 
       const [command, param1, param2] = message.text.split(/\s+/g);
       const symbol = param1.toUpperCase();
-      const [quantity, pricePerItem] = param2
-        .split("@")
-        .map((item) => formatter.currency(item));
+      const [quantity, pricePerItem] = param2.split("@").map((item) => formatter.currency(item));
 
       const fetch = await getCrypto(symbol);
       const isCryptoExists = Boolean(fetch.id);
@@ -129,11 +109,7 @@ async function commandHandler(socket, m) {
 
       const response = addItemToWalletResponse(symbol, pricePerItem, quantity);
 
-      return await socket.sendMessage(
-        message.remoteJid,
-        { text: response },
-        { quoted: message.ref }
-      );
+      return await socket.sendMessage(message.remoteJid, { text: response }, { quoted: message.ref });
     }
 
     /**
@@ -143,14 +119,11 @@ async function commandHandler(socket, m) {
      */
     if (message.text.startsWith(".remove ")) {
       const symbol = message.text.split(/\s+/g)[1].toUpperCase();
+      const amount = message.text.split(/\s+/g)[2];
 
-      await removeItemFromWallet(message.sender, symbol);
+      await removeItemFromWallet(message.sender, symbol, amount);
 
-      return await socket.sendMessage(
-        message.remoteJid,
-        { text: `*${symbol}* dihapus dari wallet` },
-        { quoted: message.ref }
-      );
+      return await socket.sendMessage(message.remoteJid, { text: `*${symbol}* dihapus dari wallet` }, { quoted: message.ref });
     }
 
     /**
@@ -167,11 +140,7 @@ async function commandHandler(socket, m) {
       const price = await getUsdtPrice();
       const totalPrice = amount * price;
 
-      return await socket.sendMessage(
-        message.remoteJid,
-        { text: `${formatter.idr(totalPrice)}` },
-        { quoted: message.ref }
-      );
+      return await socket.sendMessage(message.remoteJid, { text: `${formatter.idr(totalPrice)}` }, { quoted: message.ref });
     }
 
     /**
@@ -188,11 +157,7 @@ async function commandHandler(socket, m) {
       const usdtPrice = await getUsdtPrice();
       const totalUsdt = idrAmount / usdtPrice;
 
-      return await socket.sendMessage(
-        message.remoteJid,
-        { text: `${formatter.usd(totalUsdt)}` },
-        { quoted: message.ref }
-      );
+      return await socket.sendMessage(message.remoteJid, { text: `${formatter.usd(totalUsdt)}` }, { quoted: message.ref });
     }
 
     /**
@@ -201,18 +166,11 @@ async function commandHandler(socket, m) {
      * Example: .c 2+2
      */
     if (message.text.startsWith(".c ")) {
-      const expression = message.text
-        .replace(/.c\s+/g, "")
-        .replaceAll(".", "")
-        .replaceAll(",", ".");
+      const expression = message.text.replace(/.c\s+/g, "").replaceAll(".", "").replaceAll(",", ".");
 
       const result = evaluate(expression);
 
-      return await socket.sendMessage(
-        message.remoteJid,
-        { text: formatter.idr(result) },
-        { quoted: message.ref }
-      );
+      return await socket.sendMessage(message.remoteJid, { text: formatter.idr(result) }, { quoted: message.ref });
     }
 
     /**
@@ -222,17 +180,11 @@ async function commandHandler(socket, m) {
      */
     if (message.text.startsWith(".percent ")) {
       const [command, parameters] = message.text.split(/\s+/g);
-      const [oldValue, newValue] = parameters
-        .split("-")
-        .map((parameter) => formatter.currency(parameter));
+      const [oldValue, newValue] = parameters.split("-").map((parameter) => formatter.currency(parameter));
 
       const result = parseFloat(((newValue - oldValue) / oldValue) * 100);
 
-      return await socket.sendMessage(
-        message.remoteJid,
-        { text: `${formatter.percent(result)}` },
-        { quoted: message.ref }
-      );
+      return await socket.sendMessage(message.remoteJid, { text: `${formatter.percent(result)}` }, { quoted: message.ref });
     }
 
     /**
@@ -242,20 +194,12 @@ async function commandHandler(socket, m) {
     if (message.text === ".credit") {
       const fetch = await getCreditInfo();
 
-      return await socket.sendMessage(
-        message.remoteJid,
-        { text: JSON.stringify(fetch.data.usage, undefined, 2) },
-        { quoted: message.ref }
-      );
+      return await socket.sendMessage(message.remoteJid, { text: JSON.stringify(fetch.data.usage, undefined, 2) }, { quoted: message.ref });
     }
 
     isAdmin && initializeAdminCommand(socket, message);
   } catch (error) {
-    return await socket.sendMessage(
-      message.remoteJid,
-      { text: `Error: ${error.message}` },
-      { quoted: message.ref }
-    );
+    return await socket.sendMessage(message.remoteJid, { text: `Error: ${error.message}` }, { quoted: message.ref });
   }
 }
 
