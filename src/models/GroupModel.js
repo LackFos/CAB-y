@@ -7,6 +7,7 @@ const groupSchema = new Schema(
     admins: { type: [String] },
     bannedUsers: { type: [String] },
     mutedUsers: { type: [String] },
+    isActive: { type: Boolean },
   },
   {
     toObject: {

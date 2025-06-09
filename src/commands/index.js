@@ -1,4 +1,4 @@
-import { evaluate, log } from "mathjs";
+import { evaluate } from "mathjs";
 import WhatsappMessage from "../utils/WhatsappMessage.js";
 import * as formatter from "../utils/formatter.js";
 import { regexValidator } from "../utils/regexValidator.js";
