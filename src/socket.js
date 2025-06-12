@@ -14,6 +14,8 @@ const connectToWhatsApp = async () => {
   });
 
   socket.ev.on("connection.update", (update) => {
+    console.log(update);
+
     const { connection, lastDisconnect } = update;
 
     if (connection === "close") {
@@ -28,22 +30,27 @@ const connectToWhatsApp = async () => {
       console.log("opened connection");
 
       cron.schedule("0 */2 * * *", async () => {
-        const groups = await GroupModel.find();
-        const sendableGroups = groups.filter((group) => group.isActive === true);
+        try {
+          const groups = await GroupModel.find();
+          const sendableGroups = groups.filter((group) => group.isActive === true);
+          console.log(sendableGroups);
 
-        sendableGroups.forEach(async (group) => {
-          const { participants } = await socket.groupMetadata(group.remoteJid);
+          sendableGroups.forEach(async (group) => {
+            const { participants } = await socket.groupMetadata(group.remoteJid);
 
-          participants.forEach(async (participant) => {
-            try {
-              const wallet = await getWalletSummary(participant.id);
-              const summary = walletSummaryResponse(wallet);
-              await socket.sendMessage(group.remoteJid, { text: summary });
-            } catch (error) {
-              console.log(error);
-            }
+            participants.forEach(async (participant) => {
+              try {
+                const wallet = await getWalletSummary(participant.id);
+                const summary = walletSummaryResponse(wallet);
+                await socket.sendMessage(group.remoteJid, { text: summary });
+              } catch (error) {
+                console.log(error);
+              }
+            });
           });
-        });
+        } catch (error) {
+          console.log(error);
+        }
       });
     }
   });
