@@ -1,4 +1,4 @@
-import WalletModel from "../../models/WalletModel.js";
+import WalletModel from "../../models/walletModel.js";
 import { getCrypto } from "../../services/coinmarketcap/getCrypto.js";
 
 export const getWalletSummary = async (user) => {
