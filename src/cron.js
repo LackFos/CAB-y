@@ -4,7 +4,7 @@ import WalletModel from "./models/WalletModel.js";
 import { walletSummaryResponse } from "./utils/helpers/responseHelper.js";
 
 const setupCronJob = (socket) => {
-  cron.schedule("*/1 * * * *", async () => {
+  cron.schedule("0 */2 * * *", async () => {
     try {
       const wallets = await WalletModel.find();
       const subcribers = wallets.filter((wallet) => wallet.isSubscriber === true);
