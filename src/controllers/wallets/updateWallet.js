@@ -1,4 +1,4 @@
-import WalletModel from "../../models/WalletModel.js";
+import WalletModel from "../../models/walletModel.js";
 
 export const addItemToWallet = async (userId, item) => {
   try {
@@ -17,7 +17,11 @@ export const addItemToWallet = async (userId, item) => {
       const totalCost = existingItem.pricePerItem * existingItem.quantity + item.pricePerItem * item.quantity;
       const updatedPricePerItem = totalCost / updatedQuantity;
 
-      wallet.items[existingItemIndex] = { ...existingItem, quantity: updatedQuantity, pricePerItem: updatedPricePerItem };
+      wallet.items[existingItemIndex] = {
+        ...existingItem,
+        quantity: updatedQuantity,
+        pricePerItem: updatedPricePerItem,
+      };
     } else {
       wallet.items.push(item);
     }
