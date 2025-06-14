@@ -1,9 +1,6 @@
-import cron from "node-cron";
 import { makeWASocket, DisconnectReason, useMultiFileAuthState } from "@whiskeysockets/baileys";
 import commandHandler from "./commands/index.js";
-import { getWalletSummary } from "./controllers/wallets/getWallet.js";
-import GroupModel from "./models/GroupModel.js";
-import { walletSummaryResponse } from "./utils/helpers/responseHelper.js";
+import setupCronJob from "./cron.js";
 
 const { state, saveCreds } = await useMultiFileAuthState("./src/auth");
 
@@ -28,30 +25,7 @@ const connectToWhatsApp = async () => {
       }
     } else if (connection === "open") {
       console.log("opened connection");
-
-      cron.schedule("0 */2 * * *", async () => {
-        try {
-          const groups = await GroupModel.find();
-          const sendableGroups = groups.filter((group) => group.isActive === true);
-          console.log(sendableGroups);
-
-          sendableGroups.forEach(async (group) => {
-            const { participants } = await socket.groupMetadata(group.remoteJid);
-
-            participants.forEach(async (participant) => {
-              try {
-                const wallet = await getWalletSummary(participant.id);
-                const summary = walletSummaryResponse(wallet);
-                await socket.sendMessage(group.remoteJid, { text: summary });
-              } catch (error) {
-                console.log(error);
-              }
-            });
-          });
-        } catch (error) {
-          console.log(error);
-        }
-      });
+      setupCronJob(socket);
     }
   });
 
