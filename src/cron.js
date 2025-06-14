@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { getWalletSummary } from "./controllers/wallets/getWallet.js";
-import WalletModel from "./models/WalletModel.js";
+import WalletModel from "./models/walletModel.js";
 import { walletSummaryResponse } from "./utils/helpers/responseHelper.js";
 
 const setupCronJob = (socket) => {
